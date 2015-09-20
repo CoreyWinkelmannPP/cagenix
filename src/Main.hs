@@ -15,6 +15,8 @@ import Control.Concurrent (threadDelay)
 
 import Data.ByteString.Builder (intDec)
 
+import System.Environment (getEnv)
+
 -- The Master Site argument
 data MyRoute = MyRoute
 
@@ -46,4 +48,6 @@ application = route MyRoute
 main :: IO ()
 main = do
   putStrLn "Starting server on port 8080"
-  run 8080 $ waiApp application
+  port' <- getEnv "PORT"
+  let port = read port'
+  run port $ waiApp application
