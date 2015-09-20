@@ -6,7 +6,7 @@ import Web.Scotty
 
 main :: IO ()
 main = do
-  scotty 3000 $ do
+  scotty 8080 $ do
     get "/" $ do
       text "hello!"
     get "/hello" $ do
