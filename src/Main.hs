@@ -1,40 +1,49 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveGeneric #-}
-
+{-# LANGUAGE OverloadedStrings, TemplateHaskell, QuasiQuotes, TypeFamilies, ViewPatterns, MultiParamTypeClasses, FlexibleInstances #-}
 module Main where
+{-
+  A demonstration of streaming response body.
+  Note: Most browsers will NOT display the streaming contents as is.
+  Try CURL to see the effect of streaming. "curl localhost:8080"
+-}
 
-import Data.Monoid ((<>))
-import Data.Aeson (FromJSON, ToJSON)
-import GHC.Generics
-import Web.Scotty
+import Network.Wai.Middleware.Routes
+import Network.Wai.Handler.Warp
 
-data User = User { userId :: Int, userName :: String } deriving (Show, Generic)
-instance ToJSON User
-instance FromJSON User
+import Control.Monad (forM_)
+import Control.Monad.IO.Class (liftIO)
+import Control.Concurrent (threadDelay)
 
-bob :: User
-bob = User { userId = 1, userName = "bob" }
+import Data.ByteString.Builder (intDec)
 
-jenny :: User
-jenny = User { userId = 2, userName = "jenny" }
+-- The Master Site argument
+data MyRoute = MyRoute
 
-allUsers :: [User]
-allUsers = [bob, jenny]
+-- Generate routing code
+mkRoute "MyRoute" [parseRoutes|
+/      HomeR  GET
+|]
 
-matchesId :: Int -> User -> Bool
-matchesId id user = userId user == id
+-- Handlers
 
+-- Homepage
+getHomeR :: Handler MyRoute
+getHomeR = runHandlerM $ stream $ \write flush -> do
+    write "Starting Countdown\n"
+    flush
+    forM_ (reverse [1..10]) $ \n -> do
+      liftIO $ threadDelay 1000000
+      write $ intDec n
+      write "\n"
+      flush
+    write "Done!\n"
+
+-- The application that uses our route
+-- NOTE: We use the Route Monad to simplify routing
+application :: RouteM ()
+application = route MyRoute
+
+-- Run the application
+main :: IO ()
 main = do
-  scotty 8080 $ do
-    get "/" $ text "Welcome"
-
-    get "/hello/:name" $ do
-      name <- param "name"
-      text ("hello " <> name <> "!")
-
-    get "/users" $ do
-      json allUsers
-
-    get "/users/:id" $ do
-      id <- param "id"
-      json (filter (matchesId id) allUsers)
+  putStrLn "Starting server on port 8080"
+  run 8080 $ waiApp application
