@@ -1,53 +1,95 @@
-{-# LANGUAGE OverloadedStrings, TemplateHaskell, QuasiQuotes, TypeFamilies, ViewPatterns, MultiParamTypeClasses, FlexibleInstances #-}
+-- These extensions are needed for wai-routes
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, ViewPatterns, TemplateHaskell, QuasiQuotes, RankNTypes #-}
+-- This extension is for convenience
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 {-
-  A demonstration of streaming response body.
-  Note: Most browsers will NOT display the streaming contents as is.
-  Try CURL to see the effect of streaming. "curl localhost:8080"
+  Demonstrates all the major features of wai-routes (WIP)
 -}
 
-import Network.Wai.Middleware.Routes
-import Network.Wai.Handler.Warp
-
-import Control.Monad (forM_)
-import Control.Monad.IO.Class (liftIO)
-import Control.Concurrent (threadDelay)
-
-import Data.ByteString.Builder (intDec)
-
+import Data.Maybe (fromMaybe)
+import Data.Monoid (mconcat)
+import Data.Text (Text)
 import System.Environment (getEnv)
 
--- The Master Site argument
-data MyRoute = MyRoute
+import Network.Wai.Middleware.Routes
+import Network.Wai.Handler.Warp (run)
 
--- Generate routing code
-mkRoute "MyRoute" [parseRoutes|
-/      HomeR  GET
+-------------
+-- ROUTING --
+-------------
+
+-- The master route
+data MasterRoute = MasterRoute
+-- wai-routes uses compile time checks to avoid routes overlap
+-- We can use parseRoutesNoCheck, if we are certain we want overlapping routes
+mkRoute "MasterRoute" [parseRoutesNoCheck|
+/             RootR        GET POST DELETE PUT
+/read-headers ReadHeadersR POST
+/set-headers  SetHeadersR  POST
+/json         JsonR        GET
+/submit       SubmitR      POST
+/all          AllR
+/#Text        BeamR        GET
 |]
 
--- Handlers
 
--- Homepage
-getHomeR :: Handler MyRoute
-getHomeR = runHandlerM $ stream $ \write flush -> do
-    write "Starting Countdown\n"
-    flush
-    forM_ (reverse [1..10]) $ \n -> do
-      liftIO $ threadDelay 1000000
-      write $ intDec n
-      write "\n"
-      flush
-    write "Done!\n"
+--------------
+-- HANDLERS --
+--------------
+getRootR, deleteRootR, postRootR, putRootR :: Handler MasterRoute
+getRootR    = runHandlerM $ plain "gotten!"
+deleteRootR = runHandlerM $ plain "deleted!"
+postRootR   = runHandlerM $ plain "posted!"
+putRootR    = runHandlerM $ plain "put-ted!"
 
--- The application that uses our route
--- NOTE: We use the Route Monad to simplify routing
-application :: RouteM ()
-application = route MyRoute
+-- get a header:
+postReadHeadersR :: Handler MasterRoute
+postReadHeadersR = runHandlerM $ do
+  agent <- reqHeader "User-Agent"
+  plain $ fromMaybe "unknown user-agent" agent
 
--- Run the application
+-- set a header:
+postSetHeadersR :: Handler MasterRoute
+postSetHeadersR = runHandlerM $ do
+  status status302
+  header "Location" "http://www.google.com.au"
+
+-- set content type
+getJsonR :: Handler MasterRoute
+getJsonR = runHandlerM $ json
+    (Right ("hello", "world") :: Either Int (String, String)) -- you need types for JSON
+
+-- named parameters:
+getBeamR :: Text -> Handler MasterRoute
+getBeamR beam = runHandlerM $ html $ mconcat ["<h1>Scotty, ", beam, " me up!</h1>" ]
+
+-- unnamed parameters from a query string or a form:
+postSubmitR :: Handler MasterRoute
+postSubmitR = runHandlerM $ do
+  name <- getParam "name"
+  plain $ fromMaybe "unknown" name
+
+-- Match a route regardless of the method
+handleAllR :: Handler MasterRoute
+handleAllR = runHandlerM $ plain "matches all methods"
+
+-------------------------
+-- RUN THE APPLICATION --
+-------------------------
+
 main :: IO ()
 main = do
-  putStrLn "Starting server on port 8080"
   port' <- getEnv "PORT"
   let port = read port'
-  run port $ waiApp application
+
+  putStrLn $ "Starting server on port " ++ show port
+  run port $ waiApp $ do
+    -- Log everything
+    -- middleware logStdoutDev
+    -- Match our routes
+    route MasterRoute
+    -- handler for when there is no matched route
+    -- (this should be the last handler because it matches all routes)
+    handler $ runHandlerM $ plain "there is no such route."
