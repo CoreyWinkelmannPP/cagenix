@@ -1,14 +1,14 @@
-FROM cagenix/docker-stack
+FROM haskell
 
-# RUN cabal update
+RUN cabal update
 
-# ADD ./cagenix.cabal /var/www/api/cagenix.cabal
+ADD ./cagenix.cabal /var/www/api/cagenix.cabal
 
-# RUN cd /var/www/api && cabal install --only-dependencies -j4
+RUN cd /var/www/api && cabal install --only-dependencies -j4
 
 ADD ./ /var/www/api
-# RUN cd /var/www/api && cabal install
-RUN cd /var/www/api && stack install
+RUN cd /var/www/api && cabal install
+# RUN cd /var/www/api && stack build
 
 ENV PORT 80
 ENV PATH /root/.cabal/bin:$PATH
